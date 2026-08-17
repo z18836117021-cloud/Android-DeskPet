@@ -4,6 +4,3 @@ local.properties
 *.iml
 build/
 app/build/
-captures/
-.externalNativeBuild/
-.cxx/
