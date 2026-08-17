@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="match_parent"
+    android:orientation="vertical" android:gravity="center"
+    android:padding="28dp" android:background="#F7F8FC">
+    <ImageView android:layout_width="150dp" android:layout_height="220dp"
+        android:src="@drawable/pet"/>
+    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:text="我的桌宠" android:textStyle="bold" android:textSize="28sp"
+        android:textColor="#222631"/>
+    <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:text="开启后，桌宠可以悬浮在其他 App 上方。"
+        android:gravity="center" android:textSize="16sp" android:textColor="#626978"
+        android:layout_marginTop="12dp"/>
+    <Button android:id="@+id/startButton" android:layout_width="match_parent"
+        android:layout_height="56dp" android:text="开启桌宠" android:layout_marginTop="28dp"/>
+    <Button android:id="@+id/stopButton" android:layout_width="match_parent"
+        android:layout_height="56dp" android:text="关闭桌宠" android:layout_marginTop="12dp"/>
+</LinearLayout>
