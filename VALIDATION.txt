@@ -1,0 +1,8 @@
+Validation checklist
+- Required Gradle / Manifest / Java / resource / workflow files present
+- 9 PNG assets verified as RGBA transparent PNG
+- Drawable references checked against existing files
+- XML files parsed successfully
+- GitHub Actions YAML parsed successfully
+- Cropping artifacts removed using connected-component extraction
+- Character assets normalized to 512x640 transparent canvases
