@@ -16,7 +16,6 @@ import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
 import android.provider.Settings;
-import android.util.Base64;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.WindowManager;
@@ -26,12 +25,9 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
-import java.io.ByteArrayOutputStream;
-import java.io.InputStream;
 import java.util.Random;
 
 public class PetService extends Service {
-
     private WindowManager wm;
     private LinearLayout root;
     private ImageView pet;
@@ -43,23 +39,13 @@ public class PetService extends Service {
 
     private float downX, downY;
     private int originX, originY;
-    private long lastInteraction = 0L;
+    private long lastInteraction;
     private int currentState = 0;
     private int petSize = 225;
     private ValueAnimator motionAnimator;
 
-    private final String[] stateAssets = {
-            "pet_idle.b64",
-            "pet_wave.b64",
-            "pet_walk.b64",
-            "pet_jump.b64",
-            "pet_read.b64",
-            "pet_think.b64",
-            "pet_yawn.b64",
-            "pet_sleep.b64"
-    };
-
-    private final Bitmap[] stateBitmaps = new Bitmap[stateAssets.length];
+    private Bitmap spriteSheet;
+    private final Bitmap[] frames = new Bitmap[8];
 
     private final String[] lines = {
             "嗨～今天也要开心呀！",
@@ -73,31 +59,27 @@ public class PetService extends Service {
     };
 
     private int dp(int v) {
-        return (int)(v * getResources().getDisplayMetrics().density + 0.5f);
+        return (int) (v * getResources().getDisplayMetrics().density + 0.5f);
     }
 
     private int petHeightDp() {
         return Math.round(petSize * 1.15f);
     }
 
-    private Bitmap loadAssetBitmap(String assetName) {
-        try (InputStream in = getAssets().open(assetName);
-             ByteArrayOutputStream out = new ByteArrayOutputStream()) {
-            byte[] buffer = new byte[8192];
-            int n;
-            while ((n = in.read(buffer)) > 0) out.write(buffer, 0, n);
-            byte[] decoded = Base64.decode(out.toByteArray(), Base64.DEFAULT);
-            return BitmapFactory.decodeByteArray(decoded, 0, decoded.length);
-        } catch (Exception e) {
-            return null;
+    private boolean loadFrames() {
+        if (frames[0] != null) return true;
+        spriteSheet = BitmapFactory.decodeResource(getResources(), R.drawable.kid_sprite);
+        if (spriteSheet == null || spriteSheet.getWidth() < 4 || spriteSheet.getHeight() < 2) {
+            return false;
         }
-    }
-
-    private Bitmap bitmapForState(int index) {
-        if (stateBitmaps[index] == null) {
-            stateBitmaps[index] = loadAssetBitmap(stateAssets[index]);
+        int cellW = spriteSheet.getWidth() / 4;
+        int cellH = spriteSheet.getHeight() / 2;
+        for (int i = 0; i < frames.length; i++) {
+            int col = i % 4;
+            int row = i / 4;
+            frames[i] = Bitmap.createBitmap(spriteSheet, col * cellW, row * cellH, cellW, cellH);
         }
-        return stateBitmaps[index];
+        return true;
     }
 
     private void stopMotion() {
@@ -119,14 +101,14 @@ public class PetService extends Service {
 
     private long durationForState(int state) {
         switch (state) {
-            case 0: return 1800L; // 呼吸
-            case 1: return 900L;  // 挥手摇摆
-            case 2: return 1050L; // 走路
-            case 3: return 800L;  // 跳跃
-            case 4: return 2000L; // 看书
-            case 5: return 2200L; // 思考
-            case 6: return 1500L; // 哈欠
-            case 7: return 2500L; // 睡觉
+            case 0: return 1800L;
+            case 1: return 900L;
+            case 2: return 1050L;
+            case 3: return 800L;
+            case 4: return 2000L;
+            case 5: return 2200L;
+            case 6: return 1500L;
+            case 7: return 2500L;
             default: return 1600L;
         }
     }
@@ -139,11 +121,12 @@ public class PetService extends Service {
         motionAnimator.setDuration(durationForState(state));
         motionAnimator.setRepeatCount(ValueAnimator.INFINITE);
         motionAnimator.setRepeatMode(ValueAnimator.RESTART);
-        motionAnimator.setInterpolator(state == 2 ? new LinearInterpolator() : new AccelerateDecelerateInterpolator());
+        motionAnimator.setInterpolator(state == 2
+                ? new LinearInterpolator()
+                : new AccelerateDecelerateInterpolator());
 
         motionAnimator.addUpdateListener(animation -> {
             if (pet == null || currentState != state) return;
-
             float f = (float) animation.getAnimatedValue();
             double phase = f * Math.PI * 2.0;
             float s = (float) Math.sin(phase);
@@ -151,64 +134,46 @@ public class PetService extends Service {
             float a = Math.abs(s);
 
             switch (state) {
-                case 0: // 待机：明显但柔和的呼吸 + 轻微上下浮动
-                    pet.setScaleX(1f + 0.028f * s);
-                    pet.setScaleY(1f + 0.035f * s);
+                case 0:
+                    pet.setScaleX(1f + 0.025f * s);
+                    pet.setScaleY(1f + 0.032f * s);
                     pet.setTranslationY(-dp(4) * s);
-                    pet.setRotation(0.8f * s);
+                    pet.setRotation(0.7f * s);
                     break;
-
-                case 1: // 挥手：整个人轻快左右摆，持续循环
-                    pet.setRotation(7.5f * s);
+                case 1:
+                    pet.setRotation(7f * s);
                     pet.setTranslationX(dp(5) * s);
                     pet.setTranslationY(-dp(4) * a);
-                    pet.setScaleX(1f + 0.012f * a);
-                    pet.setScaleY(1f + 0.012f * a);
                     break;
-
-                case 2: // 走路：水平位移 + 步伐弹跳
+                case 2:
                     pet.setTranslationX(dp(22) * s);
-                    pet.setTranslationY(-dp(8) * Math.abs((float)Math.sin(phase * 2.0)));
-                    pet.setRotation(2.8f * (float)Math.sin(phase * 2.0));
-                    pet.setScaleX(1f + 0.015f * a);
-                    pet.setScaleY(1f - 0.012f * a);
+                    pet.setTranslationY(-dp(8) * Math.abs((float) Math.sin(phase * 2.0)));
+                    pet.setRotation(2.5f * (float) Math.sin(phase * 2.0));
                     break;
-
-                case 3: // 跳跃：连续弹跳，幅度明显
-                    float jump = Math.abs((float)Math.sin(phase));
+                case 3:
+                    float jump = Math.abs((float) Math.sin(phase));
                     pet.setTranslationY(-dp(34) * jump);
                     pet.setScaleX(1f + 0.04f * jump);
-                    pet.setScaleY(1f - 0.045f * jump);
-                    pet.setRotation(1.8f * s);
+                    pet.setScaleY(1f - 0.04f * jump);
                     break;
-
-                case 4: // 看书：轻微呼吸、点头
+                case 4:
                     pet.setTranslationY(-dp(3) * s);
-                    pet.setRotation(1.4f * s);
-                    pet.setScaleX(1f + 0.012f * s);
-                    pet.setScaleY(1f + 0.012f * s);
+                    pet.setRotation(1.2f * s);
                     break;
-
-                case 5: // 托腮：慢慢晃脑袋
+                case 5:
                     pet.setTranslationY(-dp(4) * s);
-                    pet.setRotation(2.8f * s);
-                    pet.setScaleX(1f + 0.010f * c);
-                    pet.setScaleY(1f + 0.010f * c);
+                    pet.setRotation(2.5f * s);
                     break;
-
-                case 6: // 哈欠：身体明显伸展再恢复
+                case 6:
                     float yawn = (1f - c) * 0.5f;
-                    pet.setScaleX(1f + 0.045f * yawn);
-                    pet.setScaleY(1f + 0.065f * yawn);
+                    pet.setScaleX(1f + 0.04f * yawn);
+                    pet.setScaleY(1f + 0.06f * yawn);
                     pet.setTranslationY(-dp(8) * yawn);
-                    pet.setRotation(-2.2f * s);
                     break;
-
-                case 7: // 睡觉：很慢的呼吸起伏
-                    pet.setScaleX(1f + 0.015f * s);
+                case 7:
+                    pet.setScaleX(1f + 0.014f * s);
                     pet.setScaleY(1f + 0.020f * s);
                     pet.setTranslationY(-dp(2) * s);
-                    pet.setRotation(0.6f * s);
                     break;
             }
         });
@@ -216,43 +181,36 @@ public class PetService extends Service {
     }
 
     private void setState(int index, boolean saySomething) {
-        if (pet == null) return;
-        currentState = (index + stateAssets.length) % stateAssets.length;
+        if (pet == null || !loadFrames()) return;
+        currentState = (index + frames.length) % frames.length;
         stopMotion();
+        final Bitmap frame = frames[currentState];
 
-        Bitmap bitmap = bitmapForState(currentState);
-        if (bitmap != null) {
-            pet.animate()
-                    .alpha(0.15f)
-                    .scaleX(0.94f)
-                    .scaleY(0.94f)
-                    .setDuration(100)
-                    .withEndAction(() -> {
-                        if (pet == null) return;
-                        pet.setImageBitmap(bitmap);
-                        pet.setTranslationX(0f);
-                        pet.setTranslationY(0f);
-                        pet.setRotation(0f);
-                        pet.animate()
-                                .alpha(1f)
-                                .scaleX(1f)
-                                .scaleY(1f)
-                                .setDuration(150)
-                                .withEndAction(() -> startContinuousMotion(currentState))
-                                .start();
-                    })
-                    .start();
-        } else {
-            startContinuousMotion(currentState);
-        }
+        pet.animate()
+                .alpha(0.25f)
+                .scaleX(0.95f)
+                .scaleY(0.95f)
+                .setDuration(90)
+                .withEndAction(() -> {
+                    if (pet == null) return;
+                    pet.setImageBitmap(frame);
+                    pet.animate()
+                            .alpha(1f)
+                            .scaleX(1f)
+                            .scaleY(1f)
+                            .setDuration(140)
+                            .withEndAction(() -> startContinuousMotion(currentState))
+                            .start();
+                })
+                .start();
 
         if (saySomething && bubble != null) {
             bubble.setText(lines[currentState]);
             bubble.animate().cancel();
             bubble.setScaleX(0.92f);
             bubble.setScaleY(0.92f);
-            bubble.setAlpha(0.5f);
-            bubble.animate().scaleX(1f).scaleY(1f).alpha(1f).setDuration(180).start();
+            bubble.setAlpha(0.55f);
+            bubble.animate().scaleX(1f).scaleY(1f).alpha(1f).setDuration(170).start();
         }
     }
 
@@ -264,12 +222,12 @@ public class PetService extends Service {
                 if (idle > 75000 && currentState != 7) {
                     setState(7, false);
                     if (bubble != null) bubble.setText("Zzz…");
-                } else if (idle > 10000 && idle <= 75000) {
+                } else if (idle > 12000 && idle <= 75000) {
                     int next = random.nextInt(7);
                     if (next != currentState) setState(next, false);
                 }
             }
-            handler.postDelayed(this, 7000);
+            handler.postDelayed(this, 8000);
         }
     };
 
@@ -284,7 +242,6 @@ public class PetService extends Service {
     @Override
     public void onCreate() {
         super.onCreate();
-
         if (!Settings.canDrawOverlays(this)) {
             stopSelf();
             return;
@@ -292,15 +249,13 @@ public class PetService extends Service {
 
         if (Build.VERSION.SDK_INT >= 26) {
             NotificationChannel channel = new NotificationChannel(
-                    "kidpet", "可爱桌宠服务", NotificationManager.IMPORTANCE_LOW
-            );
+                    "kidpet", "可爱桌宠服务", NotificationManager.IMPORTANCE_LOW);
             getSystemService(NotificationManager.class).createNotificationChannel(channel);
         }
 
         Notification.Builder builder = Build.VERSION.SDK_INT >= 26
                 ? new Notification.Builder(this, "kidpet")
                 : new Notification.Builder(this);
-
         startForeground(11, builder
                 .setContentTitle("可爱桌宠正在陪你")
                 .setContentText("桌宠动画已开启")
@@ -309,7 +264,7 @@ public class PetService extends Service {
 
         lastInteraction = System.currentTimeMillis();
         showPet();
-        handler.postDelayed(autoBehavior, 7000);
+        handler.postDelayed(autoBehavior, 8000);
     }
 
     @Override
@@ -322,7 +277,11 @@ public class PetService extends Service {
     }
 
     private void showPet() {
-        wm = (WindowManager)getSystemService(WINDOW_SERVICE);
+        if (!loadFrames()) {
+            stopSelf();
+            return;
+        }
+        wm = (WindowManager) getSystemService(WINDOW_SERVICE);
 
         root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
@@ -342,8 +301,7 @@ public class PetService extends Service {
         bubble.setBackground(bg);
 
         pet = new ImageView(this);
-        Bitmap first = bitmapForState(0);
-        if (first != null) pet.setImageBitmap(first);
+        pet.setImageBitmap(frames[0]);
         pet.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
         pet.setLayerType(ImageView.LAYER_TYPE_HARDWARE, null);
 
@@ -353,16 +311,11 @@ public class PetService extends Service {
         int type = Build.VERSION.SDK_INT >= 26
                 ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
                 : WindowManager.LayoutParams.TYPE_PHONE;
-
         lp = new WindowManager.LayoutParams(
-                dp(petSize + 54),
-                dp(petHeightDp() + 70),
-                type,
+                dp(petSize + 54), dp(petHeightDp() + 70), type,
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE |
                         WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
-                PixelFormat.TRANSLUCENT
-        );
-
+                PixelFormat.TRANSLUCENT);
         lp.gravity = Gravity.TOP | Gravity.START;
         lp.x = dp(45);
         lp.y = dp(165);
@@ -376,22 +329,19 @@ public class PetService extends Service {
                     originY = lp.y;
                     lastInteraction = System.currentTimeMillis();
                     return true;
-
                 case MotionEvent.ACTION_MOVE:
-                    lp.x = originX + (int)(event.getRawX() - downX);
-                    lp.y = originY + (int)(event.getRawY() - downY);
+                    lp.x = originX + (int) (event.getRawX() - downX);
+                    lp.y = originY + (int) (event.getRawY() - downY);
                     try { wm.updateViewLayout(root, lp); } catch (Exception ignored) {}
                     return true;
-
                 case MotionEvent.ACTION_UP:
                     lastInteraction = System.currentTimeMillis();
                     float dx = Math.abs(event.getRawX() - downX);
                     float dy = Math.abs(event.getRawY() - downY);
                     if (dx < dp(12) && dy < dp(12)) {
-                        setState((currentState + 1) % stateAssets.length, true);
+                        setState((currentState + 1) % frames.length, true);
                     }
                     return true;
-
                 default:
                     return false;
             }
@@ -412,12 +362,12 @@ public class PetService extends Service {
         if (wm != null && root != null) {
             try { wm.removeView(root); } catch (Exception ignored) {}
         }
-        for (int i = 0; i < stateBitmaps.length; i++) {
-            if (stateBitmaps[i] != null && !stateBitmaps[i].isRecycled()) {
-                stateBitmaps[i].recycle();
-            }
-            stateBitmaps[i] = null;
+        for (int i = 0; i < frames.length; i++) {
+            if (frames[i] != null && !frames[i].isRecycled()) frames[i].recycle();
+            frames[i] = null;
         }
+        if (spriteSheet != null && !spriteSheet.isRecycled()) spriteSheet.recycle();
+        spriteSheet = null;
         super.onDestroy();
     }
 
