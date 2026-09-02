@@ -5,6 +5,8 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.Service;
 import android.content.Intent;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Color;
 import android.graphics.PixelFormat;
 import android.graphics.drawable.GradientDrawable;
@@ -13,6 +15,7 @@ import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
 import android.provider.Settings;
+import android.util.Base64;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.WindowManager;
@@ -21,6 +24,8 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
 import java.util.Random;
 
 public class PetService extends Service {
@@ -40,26 +45,28 @@ public class PetService extends Service {
     private int currentState = 0;
     private int petSize = 225;
 
-    private final int[] states = {
-            R.drawable.pet_idle,
-            R.drawable.pet_wave,
-            R.drawable.pet_walk,
-            R.drawable.pet_jump,
-            R.drawable.pet_read,
-            R.drawable.pet_think,
-            R.drawable.pet_yawn,
-            R.drawable.pet_sleep
+    private final String[] stateAssets = {
+            "pet_idle.b64",
+            "pet_wave.b64",
+            "pet_walk.b64",
+            "pet_jump.b64",
+            "pet_read.b64",
+            "pet_think.b64",
+            "pet_yawn.b64",
+            "pet_sleep.b64"
     };
+
+    private final Bitmap[] stateBitmaps = new Bitmap[stateAssets.length];
 
     private final String[] lines = {
             "嗨～今天也要开心呀！",
+            "挥挥手～你好呀！",
+            "一起出去走走吧～",
+            "耶！今天也很棒！",
             "要不要一起看书？",
-            "我在这里陪你～",
-            "休息一下吧～",
-            "嘿嘿，点到我啦！",
-            "今天也很棒！",
-            "我想伸个懒腰～",
-            "困困了，先眯一会儿～"
+            "让我想一想～",
+            "有一点困困了～",
+            "我要睡觉啦～"
     };
 
     private int dp(int v) {
@@ -70,82 +77,116 @@ public class PetService extends Service {
         return Math.round(petSize * 1.15f);
     }
 
-    private void setState(int index, boolean saySomething) {
-        if (pet == null) return;
-        currentState = (index + states.length) % states.length;
+    private Bitmap loadAssetBitmap(String assetName) {
+        try (InputStream in = getAssets().open(assetName);
+             ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            byte[] buffer = new byte[8192];
+            int n;
+            while ((n = in.read(buffer)) > 0) out.write(buffer, 0, n);
+            byte[] decoded = Base64.decode(out.toByteArray(), Base64.DEFAULT);
+            return BitmapFactory.decodeByteArray(decoded, 0, decoded.length);
+        } catch (Exception e) {
+            return null;
+        }
+    }
 
+    private Bitmap bitmapForState(int index) {
+        if (stateBitmaps[index] == null) stateBitmaps[index] = loadAssetBitmap(stateAssets[index]);
+        return stateBitmaps[index];
+    }
+
+    private void resetMotion() {
+        if (pet == null) return;
         pet.animate().cancel();
         pet.setTranslationX(0f);
         pet.setTranslationY(0f);
         pet.setRotation(0f);
         pet.setScaleX(1f);
         pet.setScaleY(1f);
-        pet.setAlpha(0.2f);
-        pet.setImageResource(states[currentState]);
+        pet.setAlpha(1f);
+    }
+
+    private void setState(int index, boolean saySomething) {
+        if (pet == null) return;
+        currentState = (index + stateAssets.length) % stateAssets.length;
+        resetMotion();
+
+        Bitmap bitmap = bitmapForState(currentState);
+        if (bitmap != null) pet.setImageBitmap(bitmap);
+
+        pet.setAlpha(0.25f);
         pet.animate().alpha(1f).setDuration(180).start();
 
-        if (saySomething && bubble != null) {
-            bubble.setText(lines[currentState]);
-        }
-        playMotion(currentState);
+        if (saySomething && bubble != null) bubble.setText(lines[currentState]);
+        handler.postDelayed(() -> playMotion(currentState), 190);
+    }
+
+    private void breatheLoop(final int state, final float scale, final int liftDp, final long duration) {
+        if (pet == null || currentState != state) return;
+        pet.animate().cancel();
+        pet.animate()
+                .scaleX(scale).scaleY(scale)
+                .translationY(-dp(liftDp))
+                .setDuration(duration)
+                .setInterpolator(new AccelerateDecelerateInterpolator())
+                .withEndAction(() -> {
+                    if (pet == null || currentState != state) return;
+                    pet.animate()
+                            .scaleX(1f).scaleY(1f).translationY(0f)
+                            .setDuration(duration)
+                            .setInterpolator(new AccelerateDecelerateInterpolator())
+                            .withEndAction(() -> breatheLoop(state, scale, liftDp, duration))
+                            .start();
+                })
+                .start();
     }
 
     private void playMotion(int state) {
-        if (pet == null) return;
-
+        if (pet == null || currentState != state) return;
         switch (state) {
             case 0:
-                pet.animate()
-                        .scaleX(1.02f).scaleY(1.02f)
-                        .translationY(-dp(3))
-                        .setDuration(900)
-                        .setInterpolator(new AccelerateDecelerateInterpolator())
-                        .withEndAction(() -> pet.animate()
-                                .scaleX(1f).scaleY(1f).translationY(0)
-                                .setDuration(900).start())
-                        .start();
+                breatheLoop(0, 1.018f, 3, 950);
                 break;
-
             case 1:
-                pet.animate().rotation(-4f).translationY(-dp(2)).setDuration(180)
-                        .withEndAction(() -> pet.animate().rotation(5f).setDuration(220)
-                                .withEndAction(() -> pet.animate().rotation(0f).setDuration(180).start())
-                                .start())
-                        .start();
+                pet.animate().rotation(-5f).translationY(-dp(3)).setDuration(170)
+                        .withEndAction(() -> {
+                            if (currentState != 1) return;
+                            pet.animate().rotation(6f).setDuration(210)
+                                    .withEndAction(() -> {
+                                        if (currentState != 1) return;
+                                        pet.animate().rotation(0f).translationY(0f).setDuration(180).start();
+                                    }).start();
+                        }).start();
                 break;
-
             case 2:
-                pet.animate().translationX(dp(24)).setDuration(420)
-                        .withEndAction(() -> pet.animate().translationX(-dp(10)).setDuration(420)
-                                .withEndAction(() -> pet.animate().translationX(0).setDuration(280).start())
-                                .start())
-                        .start();
+                pet.animate().translationX(dp(26)).setDuration(380)
+                        .withEndAction(() -> {
+                            if (currentState != 2) return;
+                            pet.animate().translationX(-dp(12)).setDuration(400)
+                                    .withEndAction(() -> pet.animate().translationX(0f).setDuration(250).start())
+                                    .start();
+                        }).start();
                 break;
-
             case 3:
-                pet.animate().translationY(-dp(28)).scaleX(1.03f).scaleY(0.97f).setDuration(180)
-                        .withEndAction(() -> pet.animate().translationY(0).scaleX(1f).scaleY(1f)
-                                .setDuration(260).start())
-                        .start();
+                pet.animate().translationY(-dp(30)).scaleX(1.04f).scaleY(0.96f).setDuration(180)
+                        .withEndAction(() -> {
+                            if (currentState != 3) return;
+                            pet.animate().translationY(0f).scaleX(1f).scaleY(1f).setDuration(260).start();
+                        }).start();
                 break;
-
             case 4:
             case 5:
-                pet.animate().translationY(-dp(3)).setDuration(700)
-                        .withEndAction(() -> pet.animate().translationY(0).setDuration(700).start())
-                        .start();
+                breatheLoop(state, 1.01f, 2, 1100);
                 break;
-
             case 6:
-                pet.animate().scaleX(1.04f).scaleY(1.04f).setDuration(320)
-                        .withEndAction(() -> pet.animate().scaleX(1f).scaleY(1f).setDuration(420).start())
-                        .start();
+                pet.animate().scaleX(1.045f).scaleY(1.045f).setDuration(320)
+                        .withEndAction(() -> {
+                            if (currentState != 6) return;
+                            pet.animate().scaleX(1f).scaleY(1f).setDuration(430).start();
+                        }).start();
                 break;
-
             case 7:
-                pet.animate().scaleX(1.015f).scaleY(1.015f).setDuration(1200)
-                        .withEndAction(() -> pet.animate().scaleX(1f).scaleY(1f).setDuration(1200).start())
-                        .start();
+                breatheLoop(7, 1.012f, 1, 1350);
                 break;
         }
     }
@@ -155,12 +196,12 @@ public class PetService extends Service {
         public void run() {
             long idle = System.currentTimeMillis() - lastInteraction;
             if (pet != null) {
-                if (idle > 75000) {
+                if (idle > 75000 && currentState != 7) {
                     setState(7, false);
                     bubble.setText("Zzz…");
-                } else if (idle > 12000) {
+                } else if (idle > 14000 && idle <= 75000 && random.nextBoolean()) {
                     int next = random.nextInt(7);
-                    setState(next, false);
+                    if (next != currentState) setState(next, false);
                 }
             }
             handler.postDelayed(this, 9000);
@@ -236,7 +277,8 @@ public class PetService extends Service {
         bubble.setBackground(bg);
 
         pet = new ImageView(this);
-        pet.setImageResource(states[0]);
+        Bitmap first = bitmapForState(0);
+        if (first != null) pet.setImageBitmap(first);
         pet.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
 
         root.addView(bubble, new LinearLayout.LayoutParams(dp(190), dp(44)));
@@ -279,9 +321,8 @@ public class PetService extends Service {
                     lastInteraction = System.currentTimeMillis();
                     float dx = Math.abs(event.getRawX() - downX);
                     float dy = Math.abs(event.getRawY() - downY);
-
                     if (dx < dp(10) && dy < dp(10)) {
-                        setState((currentState + 1) % states.length, true);
+                        setState((currentState + 1) % stateAssets.length, true);
                     }
                     return true;
 
@@ -301,9 +342,13 @@ public class PetService extends Service {
     @Override
     public void onDestroy() {
         handler.removeCallbacksAndMessages(null);
-        if (pet != null) pet.animate().cancel();
+        resetMotion();
         if (wm != null && root != null) {
             try { wm.removeView(root); } catch (Exception ignored) {}
+        }
+        for (int i = 0; i < stateBitmaps.length; i++) {
+            if (stateBitmaps[i] != null && !stateBitmaps[i].isRecycled()) stateBitmaps[i].recycle();
+            stateBitmaps[i] = null;
         }
         super.onDestroy();
     }
