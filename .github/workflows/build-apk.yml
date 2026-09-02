@@ -7,6 +7,7 @@ on:
       - kid-deskpet
     paths:
       - 'KidDeskPet/**'
+      - 'kid_sprite_parts/**'
       - '.github/workflows/build-apk.yml'
 
 jobs:
@@ -33,6 +34,15 @@ jobs:
 
       - name: Install Android SDK
         run: sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Restore and verify kid sprite
+        shell: bash
+        run: |
+          mkdir -p KidDeskPet/app/src/main/res/drawable-nodpi
+          cat kid_sprite_parts/part_{00..13}.b64 > /tmp/kid_sprite.b64
+          test "$(wc -c < /tmp/kid_sprite.b64)" -eq 69288
+          base64 -d /tmp/kid_sprite.b64 > KidDeskPet/app/src/main/res/drawable-nodpi/kid_sprite.webp
+          echo "0499bb5858882e5059858b99b1e5bc175d1cedfc7b98e317888ad2c84c49e335  KidDeskPet/app/src/main/res/drawable-nodpi/kid_sprite.webp" | sha256sum -c -
 
       - name: Build Kid DeskPet APK
         run: gradle --no-daemon -p KidDeskPet :app:assembleDebug
