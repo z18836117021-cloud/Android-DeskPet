@@ -12,11 +12,10 @@
         android:padding="22dp">
 
         <ImageView
-            android:id="@+id/previewPet"
             android:layout_width="190dp"
             android:layout_height="230dp"
-            android:scaleType="centerInside"
-            android:contentDescription="桌宠预览"/>
+            android:src="@drawable/kid_sprite"
+            android:scaleType="centerInside"/>
 
         <TextView
             android:layout_width="wrap_content"
